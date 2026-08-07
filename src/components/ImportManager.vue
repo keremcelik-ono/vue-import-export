@@ -21,8 +21,8 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useImportStore } from '../stores/import.js'
-import { useTranslate, useNotify } from '../adapters.js'
-import type { APIImport } from '../types.js'
+import { useTranslate, useNotify, useLoadModelFields } from '../adapters.js'
+import type { APIImport, ImportFieldCatalogueEntry } from '../types.js'
 import UploadInput, { type UploadValue } from './UploadInput.vue'
 import ColumnMappingModal from './ColumnMappingModal.vue'
 import ImportPagination from './ImportPagination.vue'
@@ -61,6 +61,12 @@ const props = withDefaults(
     autoFetch?: boolean
     /** Default model used for the "Export all" action when no filter is set. */
     defaultExportModel?: string
+    /**
+     * Extra session options sent with the upload as `options[key]`. Carries
+     * context the file does not contain — e.g. a provider preset to apply, or
+     * the position imported candidates should be attached to.
+     */
+    initializeOptions?: Record<string, unknown>
   }>(),
   {
     title: '',
@@ -70,6 +76,7 @@ const props = withDefaults(
     initialSearch: '',
     autoFetch: true,
     defaultExportModel: 'App\\Models\\User',
+    initializeOptions: undefined,
   },
 )
 
@@ -90,7 +97,15 @@ const emit = defineEmits<{
 
 const t = useTranslate()
 const notify = useNotify()
+const loadModelFields = useLoadModelFields()
 const importStore = useImportStore()
+
+/**
+ * Assignable target fields for the module being imported. Optional: without a
+ * host-provided loader the mapping modal falls back to listing only the targets
+ * the session already matched.
+ */
+const fieldCatalogue = ref<ImportFieldCatalogueEntry[]>([])
 
 // `selectedFile` can be a raw File or the UploadInput payload wrapper.
 const selectedFile = ref<UploadValue>(null)
@@ -244,7 +259,11 @@ async function handleUpload() {
   if (!file || !(file instanceof File)) return
 
   // Step 1: Initialize import (upload file).
-  const result = await importStore.initializeImport(selectedModule.value, file)
+  const result = await importStore.initializeImport(
+    selectedModule.value,
+    file,
+    props.initializeOptions,
+  )
   if (!result) {
     if (importStore.error) reportError(importStore.error)
     return
@@ -255,10 +274,34 @@ async function handleUpload() {
     await importStore.fetchMappings(result.id)
   }
 
-  // Step 3: Open mapping modal.
+  // Step 3: Load the target-field catalogue so unmatched fields and repeating
+  // group slots are mappable, then open the modal. A failure here is not fatal:
+  // the modal still lists whatever the session matched.
+  await refreshFieldCatalogue(selectedModule.value)
+
+  // Step 4: Open mapping modal.
   showMappingModal.value = true
   selectedFile.value = null
   emit('uploaded', result)
+}
+
+/**
+ * Fetch the target-field catalogue for a model, clearing it when the host
+ * provides no loader or the request fails.
+ *
+ * @param model Importable FQCN being imported
+ */
+async function refreshFieldCatalogue(model: string): Promise<void> {
+  if (!loadModelFields || !model) {
+    fieldCatalogue.value = []
+    return
+  }
+
+  try {
+    fieldCatalogue.value = await loadModelFields(model)
+  } catch {
+    fieldCatalogue.value = []
+  }
 }
 
 function cancelUpload() {
@@ -760,6 +803,7 @@ function getStatusLabel(status: string): string {
       :import-id="importStore.currentImportSession?.id ?? null"
       :mappings="importStore.mappings"
       :detected-headers="importStore.currentImportSession?.detected_headers ?? []"
+      :field-catalogue="fieldCatalogue"
       :loading="startingImport"
       @close="handleCloseMappingModal"
       @start="handleStartImport"

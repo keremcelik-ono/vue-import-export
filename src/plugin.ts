@@ -23,10 +23,12 @@ import {
   IMPORT_API_KEY,
   TRANSLATE_KEY,
   NOTIFY_KEY,
+  LOAD_MODEL_FIELDS_KEY,
   defaultTranslate,
   defaultNotify,
   type TranslateFn,
   type NotifyFn,
+  type LoadModelFieldsFn,
 } from './adapters.js'
 
 export interface CreateImportExportOptions {
@@ -36,6 +38,12 @@ export interface CreateImportExportOptions {
   t?: TranslateFn
   /** Toast/notification callback. Defaults to a no-op. */
   notify?: NotifyFn
+  /**
+   * Loads the assignable target fields for a model. Supply this to let the
+   * mapping modal list every field — including ones auto-matching missed, and
+   * repeating-group slots — instead of only the session's mapped targets.
+   */
+  loadModelFields?: LoadModelFieldsFn
 }
 
 /**
@@ -59,6 +67,7 @@ export function createImportExport(options: CreateImportExportOptions): Plugin {
       app.provide(IMPORT_API_KEY, options.apiClient)
       app.provide(TRANSLATE_KEY, t)
       app.provide(NOTIFY_KEY, notify)
+      app.provide(LOAD_MODEL_FIELDS_KEY, options.loadModelFields ?? null)
 
       app.config.globalProperties.$importApi = options.apiClient
       registry.set(app, options.apiClient)

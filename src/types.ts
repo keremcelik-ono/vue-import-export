@@ -61,6 +61,48 @@ export interface APIImportMapping {
 }
 
 /**
+ * One row of the column-mapping table: a target field the user can point at a
+ * file column. Built either from the host's field catalogue or, when none is
+ * supplied, from the session's own mappings.
+ */
+export interface MappingRowModel {
+  target_field: string
+  label: string
+  required: boolean
+  /** Auto-match confidence for the currently selected column, 0 when unmapped. */
+  confidence_score: number
+}
+
+/**
+ * One assignable target field, as described by the host rather than by a
+ * session.
+ *
+ * The mapping modal can only list target fields it knows about. Deriving that
+ * list from the session's mappings alone hides every field auto-matching failed
+ * to hit, leaving it unassignable by hand. When the host supplies a catalogue
+ * (see `loadModelFields` in the plugin options) the modal lists these instead.
+ *
+ * The `group*` members describe repeating sections — several jobs, schools or
+ * languages per row — which the backend flattens into `<group>.<slot>.<leaf>`
+ * target fields. The modal folds them back into collapsible sections.
+ */
+export interface ImportFieldCatalogueEntry {
+  field: string
+  label: string
+  required: boolean
+  type?: string
+  aliases?: string[]
+  /** Group key, e.g. `experience_information`. Null/absent for flat fields. */
+  group?: string | null
+  /** Human label for the group, e.g. "İş Deneyimi". */
+  group_label?: string | null
+  /** Zero-based slot index within the group. */
+  group_index?: number | null
+  /** Leaf name within the slot, e.g. `company`. */
+  group_field?: string | null
+}
+
+/**
  * An import session. Also referred to as `ImportSession`
  * (exported as an alias below) to match the backend nomenclature.
  */

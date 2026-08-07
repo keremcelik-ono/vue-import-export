@@ -49,6 +49,7 @@
     "build": "npm run clean && vue-tsc -b --force && vite build",
     "test": "vitest",
     "typecheck": "vue-tsc --noEmit",
+    "prepare": "npm run build",
     "lint": "eslint . --ext .ts,.vue",
     "prepublishOnly": "npm run build"
   },

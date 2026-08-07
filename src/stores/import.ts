@@ -100,7 +100,20 @@ export const useImportStore = defineStore('import', () => {
     }
   }
 
-  async function initializeImport(model: string, file: File): Promise<APIImport | null> {
+  /**
+   * Upload a file and create the import session.
+   *
+   * @param model Importable FQCN
+   * @param file  The spreadsheet to import
+   * @param options Extra session options sent as `options[key]`. Hosts use this
+   *   to carry context the file itself does not contain — a provider preset to
+   *   apply, or which position to attach imported candidates to.
+   */
+  async function initializeImport(
+    model: string,
+    file: File,
+    options?: Record<string, unknown>,
+  ): Promise<APIImport | null> {
     uploading.value = true
     uploadProgress.value = 0
     error.value = null
@@ -108,6 +121,16 @@ export const useImportStore = defineStore('import', () => {
       const formData = new FormData()
       formData.append('model', model)
       formData.append('file', file)
+
+      for (const [key, value] of Object.entries(options ?? {})) {
+        if (value === undefined || value === null || value === '') continue
+        // Booleans go over multipart as 1/0 so Laravel's `boolean` rule accepts
+        // them; "false" would otherwise validate as true.
+        formData.append(
+          `options[${key}]`,
+          typeof value === 'boolean' ? (value ? '1' : '0') : String(value),
+        )
+      }
 
       const response = await api.initializeImport(formData, {
         onUploadProgress: (progressEvent) => {

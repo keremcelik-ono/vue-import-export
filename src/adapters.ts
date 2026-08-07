@@ -9,7 +9,7 @@
  */
 import { inject, type InjectionKey } from 'vue'
 import type { ImportApiClient } from './api/ImportApiClient.js'
-import type { NotifyPayload } from './types.js'
+import type { ImportFieldCatalogueEntry, NotifyPayload } from './types.js'
 
 // --- Contract types ---
 
@@ -27,6 +27,19 @@ export type TranslateFn = (
 /** Toast/notification callback. */
 export type NotifyFn = (payload: NotifyPayload) => void
 
+/**
+ * Loads the assignable target fields for a model.
+ *
+ * Kept as a host-provided function rather than a method on
+ * {@link ImportApiClient}: the endpoint serving this list is an application
+ * concern, not part of the backend package's contract. Hosts that do not provide
+ * it keep the previous behaviour, where the mapping modal lists only the target
+ * fields the session already has a mapping row for.
+ */
+export type LoadModelFieldsFn = (
+  model: string,
+) => Promise<ImportFieldCatalogueEntry[]>
+
 // --- Injection keys ---
 
 export const IMPORT_API_KEY: InjectionKey<ImportApiClient> = Symbol(
@@ -38,6 +51,8 @@ export const TRANSLATE_KEY: InjectionKey<TranslateFn> = Symbol(
 export const NOTIFY_KEY: InjectionKey<NotifyFn> = Symbol(
   'vue-import-export:notify',
 )
+export const LOAD_MODEL_FIELDS_KEY: InjectionKey<LoadModelFieldsFn | null> =
+  Symbol('vue-import-export:loadModelFields')
 
 // --- Safe defaults ---
 
@@ -74,4 +89,13 @@ export function useTranslate(): TranslateFn {
 /** Resolve the notify function, defaulting to a no-op. */
 export function useNotify(): NotifyFn {
   return inject(NOTIFY_KEY, defaultNotify)
+}
+
+/**
+ * Resolve the target-field catalogue loader, or `null` when the host did not
+ * provide one. Callers must treat `null` as "list only the session's mapped
+ * targets".
+ */
+export function useLoadModelFields(): LoadModelFieldsFn | null {
+  return inject(LOAD_MODEL_FIELDS_KEY, null)
 }

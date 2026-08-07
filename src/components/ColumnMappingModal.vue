@@ -55,7 +55,7 @@
               <div class="flex items-center gap-4 mb-4 px-1">
                 <div class="flex items-center gap-1.5 text-xs text-[#4B5565]">
                   <span class="w-2 h-2 rounded-full bg-green-500"></span>
-                  {{ mappedCount }}/{{ dedupedMappings.length }} {{ t('mapped', { default: 'mapped' }) }}
+                  {{ mappedCount }}/{{ allRows.length }} {{ t('mapped', { default: 'mapped' }) }}
                 </div>
                 <div
                   v-if="requiredUnmappedCount > 0"
@@ -66,7 +66,7 @@
                 </div>
               </div>
 
-              <table class="w-full">
+              <table v-if="flatRows.length" class="w-full">
                 <thead>
                   <tr class="border-b border-gray-200">
                     <th class="text-left text-xs font-semibold text-[#4B5565] pb-3 pr-4 w-[200px]">
@@ -84,77 +84,79 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr
-                    v-for="mapping in dedupedMappings"
-                    :key="mapping.id"
-                    class="border-b border-gray-100 transition-colors"
-                    :class="{ 'bg-red-50/30': mapping.is_required && !localMappings[mapping.target_field] }"
-                  >
-                    <!-- System Field -->
-                    <td class="py-3.5 pr-4">
-                      <div>
-                        <span class="text-sm font-medium text-[#364152]">{{ getFieldLabel(mapping.target_field) }}</span>
-                        <span class="block text-xs text-[#9AA4B2] mt-0.5">{{ mapping.target_field }}</span>
-                        <span
-                          v-if="mapping.is_required"
-                          class="inline-block mt-1 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded"
-                        >{{ t('required', { default: 'Required' }) }}</span>
-                      </div>
-                    </td>
-
-                    <!-- File Header Dropdown -->
-                    <td class="py-3.5 pr-4">
-                      <SelectInput
-                        :modelValue="localMappings[mapping.target_field] || null"
-                        :options="headerOptions"
-                        :placeholder="t('selectColumnFromFile', { default: 'Select a column from file' })"
-                        :searchable="true"
-                        @update:modelValue="handleMappingChange(mapping.target_field, $event as string)"
-                      />
-                    </td>
-
-                    <!-- Match Score -->
-                    <td class="py-3.5 pr-4">
-                      <div v-if="localMappings[mapping.target_field]" class="flex items-center gap-2">
-                        <div class="flex-1 h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            class="h-full rounded-full transition-all duration-500 ease-out"
-                            :class="getScoreColor(mapping.confidence_score)"
-                            :style="{ width: Math.max(scorePercent(mapping.confidence_score), 5) + '%' }"
-                          ></div>
-                        </div>
-                        <span
-                          class="text-xs font-semibold w-[40px] text-right"
-                          :class="getScoreTextColor(mapping.confidence_score)"
-                        >%{{ scorePercent(mapping.confidence_score) }}</span>
-                      </div>
-                      <div v-else class="h-2.5"></div>
-                    </td>
-
-                    <!-- Status -->
-                    <td class="py-3.5 text-center">
-                      <div class="flex items-center justify-center">
-                        <CheckCircleIcon
-                          v-if="localMappings[mapping.target_field] && mapping.confidence_score >= 0.4"
-                          class="w-5 h-5 text-green-500"
-                        />
-                        <ExclamationTriangleIcon
-                          v-else-if="localMappings[mapping.target_field] && mapping.confidence_score < 0.4"
-                          class="w-5 h-5 text-orange-400"
-                        />
-                        <ExclamationCircleIcon
-                          v-else-if="mapping.is_required && !localMappings[mapping.target_field]"
-                          class="w-5 h-5 text-red-400"
-                        />
-                        <MinusCircleIcon
-                          v-else
-                          class="w-5 h-5 text-gray-300"
-                        />
-                      </div>
-                    </td>
-                  </tr>
+                  <MappingRow
+                    v-for="row in flatRows"
+                    :key="row.target_field"
+                    :row="row"
+                    :modelValue="localMappings[row.target_field] || null"
+                    :headerOptions="headerOptions"
+                    @update:modelValue="handleMappingChange(row.target_field, $event)"
+                  />
                 </tbody>
               </table>
+
+              <!--
+                Repeating groups: one collapsible section per group, one block
+                per slot. A file may carry several jobs / schools / languages
+                per row, so each slot is its own set of target fields.
+              -->
+              <div
+                v-for="section in groupSections"
+                :key="section.key"
+                class="mt-4 border border-gray-200 rounded-xl overflow-hidden"
+              >
+                <button
+                  type="button"
+                  class="w-full flex items-center justify-between px-4 py-3 bg-gray-50/70 hover:bg-gray-100 transition"
+                  :aria-expanded="isExpanded(section.key)"
+                  @click="toggleSection(section.key)"
+                >
+                  <span class="flex items-center gap-2 text-sm font-semibold text-[#364152]">
+                    <ChevronRightIcon
+                      class="w-4 h-4 text-gray-400 transition-transform"
+                      :class="{ 'rotate-90': isExpanded(section.key) }"
+                    />
+                    {{ section.label }}
+                  </span>
+                  <span class="text-xs text-[#4B5565]">
+                    {{ section.mappedCount }}/{{ section.maxSlots }}
+                    {{ t('groupSlotsMapped', { default: 'slot(s) mapped' }) }}
+                  </span>
+                </button>
+
+                <div v-if="isExpanded(section.key)" class="px-4 pb-4">
+                  <div
+                    v-for="slot in visibleSlots(section)"
+                    :key="slot.index"
+                    class="mt-3"
+                  >
+                    <p class="text-xs font-semibold text-[#4B5565] mb-1">
+                      {{ section.label }} {{ slot.index + 1 }}
+                    </p>
+                    <table class="w-full">
+                      <tbody>
+                        <MappingRow
+                          v-for="row in slot.rows"
+                          :key="row.target_field"
+                          :row="row"
+                          :modelValue="localMappings[row.target_field] || null"
+                          :headerOptions="headerOptions"
+                          @update:modelValue="handleMappingChange(row.target_field, $event)"
+                        />
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <button
+                    v-if="canAddSlot(section)"
+                    type="button"
+                    class="mt-3 text-xs font-semibold text-[#364152] hover:underline"
+                    @click="addSlot(section)"
+                  >
+                    + {{ t('addGroupSlot', { default: 'Add slot' }) }}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <!-- Footer -->
@@ -224,13 +226,16 @@
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import {
   CheckCircleIcon,
+  ChevronRightIcon,
   ExclamationCircleIcon,
-  ExclamationTriangleIcon,
-  MinusCircleIcon,
 } from '@heroicons/vue/24/solid'
-import SelectInput from './inputs/SelectInput.vue'
+import MappingRow from './MappingRow.vue'
 import { useTranslate } from '../adapters'
-import type { APIImportMapping } from '../types'
+import type {
+  APIImportMapping,
+  ImportFieldCatalogueEntry,
+  MappingRowModel,
+} from '../types'
 
 defineOptions({
   inheritAttrs: false,
@@ -242,6 +247,13 @@ interface Props {
   mappings: APIImportMapping[]
   detectedHeaders: string[]
   loading?: boolean
+  /**
+   * Every assignable target field for the model. When supplied the table lists
+   * these, so a field auto-matching missed can still be mapped by hand and
+   * repeating-group slots become reachable. Falling back to the session's own
+   * mappings (the previous behaviour) only ever shows already-matched targets.
+   */
+  fieldCatalogue?: ImportFieldCatalogueEntry[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -264,40 +276,27 @@ const headerOptions = computed(() => {
   }))
 })
 
-const allRequiredMapped = computed(() => {
-  return dedupedMappings.value
-    .filter((m) => m.is_required)
-    .every((m) => !!localMappings.value[m.target_field])
-})
-
-const mappedCount = computed(() => {
-  return dedupedMappings.value.filter((m) => !!localMappings.value[m.target_field]).length
-})
-
-const requiredUnmappedCount = computed(() => {
-  return dedupedMappings.value
-    .filter((m) => m.is_required && !localMappings.value[m.target_field])
-    .length
-})
-
-// Deduplicated mappings: filter null target_fields and pick best match per target
-const dedupedMappings = computed(() => {
+/**
+ * Best mapping per target field: confirmed wins, then highest confidence. Near
+ * duplicate headers would otherwise let the wrong column claim a target.
+ */
+const mappingByTarget = computed(() => {
   const byTarget = new Map<string, APIImportMapping>()
   for (const m of props.mappings) {
     if (!m.target_field) continue
     const existing = byTarget.get(m.target_field)
     if (!existing) {
       byTarget.set(m.target_field, m)
-    } else {
-      // Prefer confirmed, then higher confidence
-      if (m.is_confirmed && !existing.is_confirmed) {
-        byTarget.set(m.target_field, m)
-      } else if (m.is_confirmed === existing.is_confirmed && m.confidence_score > existing.confidence_score) {
-        byTarget.set(m.target_field, m)
-      }
+    } else if (m.is_confirmed && !existing.is_confirmed) {
+      byTarget.set(m.target_field, m)
+    } else if (
+      m.is_confirmed === existing.is_confirmed &&
+      m.confidence_score > existing.confidence_score
+    ) {
+      byTarget.set(m.target_field, m)
     }
   }
-  return Array.from(byTarget.values())
+  return byTarget
 })
 
 const fieldLabels: Record<string, string> = {
@@ -323,26 +322,169 @@ const fieldLabels: Record<string, string> = {
   level_name: 'Gerekli Seviye Adı',
 }
 
-function getFieldLabel(field: string): string {
+function getFieldLabel(field: string, fallback?: string): string {
   // Allow host i18n to override per-field labels via `field.<target_field>`,
-  // falling back to the bundled Turkish defaults, then the raw field key.
-  return t(`field.${field}`, { default: fieldLabels[field] || field })
+  // falling back to the catalogue label, the bundled Turkish defaults, then the
+  // raw field key.
+  return t(`field.${field}`, {
+    default: fallback || fieldLabels[field] || field,
+  })
 }
 
-function scorePercent(score: number): number {
-  return Math.round(score * 100)
+/** Turn one catalogue entry (or bare mapping) into a table row. */
+function toRow(
+  targetField: string,
+  required: boolean,
+  label?: string,
+): MappingRowModel {
+  const mapping = mappingByTarget.value.get(targetField)
+
+  return {
+    target_field: targetField,
+    label: getFieldLabel(targetField, label),
+    required,
+    confidence_score: mapping?.confidence_score ?? 0,
+  }
 }
 
-function getScoreColor(score: number): string {
-  if (score >= 0.8) return 'bg-green-500'
-  if (score >= 0.4) return 'bg-orange-400'
-  return 'bg-red-400'
+/** Catalogue entries that belong to a repeating group. */
+const groupEntries = computed(() =>
+  (props.fieldCatalogue ?? []).filter((entry) => !!entry.group),
+)
+
+/** Non-group rows: the catalogue's flat fields, or the session's mapped targets. */
+const flatRows = computed<MappingRowModel[]>(() => {
+  if (props.fieldCatalogue?.length) {
+    return props.fieldCatalogue
+      .filter((entry) => !entry.group)
+      .map((entry) => toRow(entry.field, entry.required, entry.label))
+  }
+
+  return Array.from(mappingByTarget.value.values()).map((m) =>
+    toRow(m.target_field, m.is_required),
+  )
+})
+
+interface GroupSection {
+  key: string
+  label: string
+  maxSlots: number
+  /** Slots that carry at least one mapped column. */
+  mappedCount: number
+  slots: Array<{ index: number; rows: MappingRowModel[] }>
 }
 
-function getScoreTextColor(score: number): string {
-  if (score >= 0.8) return 'text-green-600'
-  if (score >= 0.4) return 'text-orange-500'
-  return 'text-red-500'
+/** One section per repeating group, its slots in order. */
+const groupSections = computed<GroupSection[]>(() => {
+  const sections = new Map<string, GroupSection>()
+
+  for (const entry of groupEntries.value) {
+    const key = entry.group as string
+    const slotIndex = entry.group_index ?? 0
+
+    if (!sections.has(key)) {
+      sections.set(key, {
+        key,
+        label: t(`group.${key}`, { default: entry.group_label || key }),
+        maxSlots: 0,
+        mappedCount: 0,
+        slots: [],
+      })
+    }
+
+    const section = sections.get(key) as GroupSection
+    let slot = section.slots.find((s) => s.index === slotIndex)
+    if (!slot) {
+      slot = { index: slotIndex, rows: [] }
+      section.slots.push(slot)
+    }
+
+    // Label lookup is slot-independent: `field.<group>.<leaf>` needs one key
+    // per leaf, whereas `field.<group>.<slot>.<leaf>` would need one per slot.
+    slot.rows.push(
+      toRow(
+        entry.field,
+        entry.required,
+        t(`field.${key}.${entry.group_field}`, {
+          default: entry.group_field || entry.label,
+        }),
+      ),
+    )
+  }
+
+  for (const section of sections.values()) {
+    section.slots.sort((a, b) => a.index - b.index)
+    section.maxSlots = section.slots.length
+    section.mappedCount = section.slots.filter((slot) =>
+      slot.rows.some((row) => !!localMappings.value[row.target_field]),
+    ).length
+  }
+
+  return Array.from(sections.values())
+})
+
+/** Every row in the table, used for the "n/m mapped" summary. */
+const allRows = computed<MappingRowModel[]>(() => [
+  ...flatRows.value,
+  ...groupSections.value.flatMap((section) =>
+    section.slots.flatMap((slot) => slot.rows),
+  ),
+])
+
+const allRequiredMapped = computed(() =>
+  allRows.value
+    .filter((row) => row.required)
+    .every((row) => !!localMappings.value[row.target_field]),
+)
+
+const mappedCount = computed(
+  () => allRows.value.filter((row) => !!localMappings.value[row.target_field]).length,
+)
+
+const requiredUnmappedCount = computed(
+  () =>
+    allRows.value.filter(
+      (row) => row.required && !localMappings.value[row.target_field],
+    ).length,
+)
+
+// ── Group section disclosure ────────────────────────────────────────────────
+// A group can declare a dozen slots; showing them all at once buries the fields
+// that matter. Sections open only when something in them is mapped, and slots
+// are revealed one past the last mapped one.
+
+const expandedSections = ref<Record<string, boolean>>({})
+const revealedSlots = ref<Record<string, number>>({})
+
+function isExpanded(key: string): boolean {
+  return expandedSections.value[key] ?? false
+}
+
+function toggleSection(key: string): void {
+  expandedSections.value[key] = !isExpanded(key)
+}
+
+/** Slots to render: through the last mapped one, plus one empty invitation. */
+function visibleSlots(section: GroupSection) {
+  const lastMapped = section.slots.reduce(
+    (last, slot) =>
+      slot.rows.some((row) => !!localMappings.value[row.target_field])
+        ? slot.index
+        : last,
+    -1,
+  )
+  const revealed = revealedSlots.value[section.key] ?? 0
+  const count = Math.max(lastMapped + 2, revealed, 1)
+
+  return section.slots.filter((slot) => slot.index < count)
+}
+
+function canAddSlot(section: GroupSection): boolean {
+  return visibleSlots(section).length < section.maxSlots
+}
+
+function addSlot(section: GroupSection): void {
+  revealedSlots.value[section.key] = visibleSlots(section).length + 1
 }
 
 function handleMappingChange(targetField: string, value: string | null | undefined) {
@@ -357,16 +499,30 @@ function handleStartImport() {
   emit('start', result)
 }
 
+/**
+ * Seed the selections from the backend's proposals: a confirmed mapping, or an
+ * auto-match confident enough to trust. Anything weaker starts blank so the user
+ * chooses deliberately.
+ *
+ * Group sections that received a mapping are opened, so a preset-driven session
+ * shows what it filled in instead of hiding it behind a collapsed header.
+ */
 function buildLocalMappings() {
   const mapped: Record<string, string | null> = {}
-  for (const m of dedupedMappings.value) {
-    if (m.is_confirmed || m.confidence_score >= 0.8) {
-      mapped[m.target_field] = m.source_column || null
-    } else {
-      mapped[m.target_field] = null
+
+  for (const [targetField, m] of mappingByTarget.value) {
+    mapped[targetField] = m.is_confirmed || m.confidence_score >= 0.8
+      ? m.source_column || null
+      : null
+  }
+
+  localMappings.value = mapped
+
+  for (const section of groupSections.value) {
+    if (section.slots.some((slot) => slot.rows.some((row) => !!mapped[row.target_field]))) {
+      expandedSections.value[section.key] ??= true
     }
   }
-  localMappings.value = mapped
 }
 
 // Populate localMappings from props when modal opens
@@ -384,6 +540,17 @@ watch(
   () => props.mappings,
   (newMappings) => {
     if (props.show && newMappings.length > 0) {
+      buildLocalMappings()
+    }
+  },
+)
+
+// The catalogue is fetched separately and may land after the mappings, which is
+// what decides whether group sections start open.
+watch(
+  () => props.fieldCatalogue,
+  () => {
+    if (props.show && props.mappings.length > 0) {
       buildLocalMappings()
     }
   },
