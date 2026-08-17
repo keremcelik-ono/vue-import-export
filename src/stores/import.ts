@@ -18,12 +18,15 @@ import { ref } from 'vue'
 import { useImportApi } from '../adapters.js'
 import type {
   APIImport,
+  APIImportField,
   APIImportMapping,
   AllowedModel,
   ImportListParams,
+  MappingSuggestion,
   UpdateMappingPayload,
   BatchUpdateMappingsPayload,
 } from '../types.js'
+import { isTerminalImportStatus } from '../types.js'
 
 export const useImportStore = defineStore('import', () => {
   // The injected API client (replaces the hardcoded `sdk.importAPI`).
@@ -58,6 +61,12 @@ export const useImportStore = defineStore('import', () => {
   // Mapping state
   const mappings = ref<APIImportMapping[]>([])
   const mappingsLoading = ref(false)
+
+  // Every importable target field of the current session's model. The mapping
+  // rows only cover the file's own headers, so this is what lets the editor
+  // offer — and the user hand-map — a field the file never mentions.
+  const fieldCatalogue = ref<APIImportField[]>([])
+  const fieldCatalogueLoading = ref(false)
 
   // Polling
   let progressInterval: ReturnType<typeof setInterval> | null = null
@@ -120,6 +129,7 @@ export const useImportStore = defineStore('import', () => {
       if (response.data?.mappings) {
         mappings.value = response.data.mappings
       }
+      fieldCatalogue.value = response.meta?.fields ?? []
       return response.data
     } catch (e: any) {
       error.value = e?.response?.data?.message || e?.message || 'Dosya yüklenemedi'
@@ -176,7 +186,11 @@ export const useImportStore = defineStore('import', () => {
             failed_rows: Number(progress.failed_rows) || 0,
           }
         }
-        if (progress.status === 'completed' || progress.status === 'failed') {
+        // Stop on ANY terminal status — the backend also finalises to
+        // `completed_with_errors` (rows failed) and `cancelled`; treating only
+        // `completed`/`failed` as done left the row stuck on "processing" and
+        // polling forever.
+        if (isTerminalImportStatus(progress.status)) {
           stopPolling()
           await fetchImports()
         }
@@ -203,6 +217,42 @@ export const useImportStore = defineStore('import', () => {
       console.error('Failed to fetch mappings:', e)
     } finally {
       mappingsLoading.value = false
+    }
+  }
+
+  /**
+   * Load the model's field catalogue from the session's suggestions.
+   *
+   * Fallback for a backend whose session payload carries no `meta.fields`:
+   * queried without a column, the suggestions endpoint returns every importable
+   * field. It describes them less fully (no aliases, and `required`/`type` only
+   * on backends that send them), which is why it is the second choice rather
+   * than the first. Failing is not fatal — the editor then falls back to the
+   * fields the session already maps.
+   *
+   * @param id Import session id
+   */
+  async function fetchFieldCatalogue(id: number) {
+    fieldCatalogueLoading.value = true
+    try {
+      const response = await api.mappingSuggestions(id)
+      const suggestions: MappingSuggestion[] = Array.isArray(response.data) ? response.data : []
+
+      fieldCatalogue.value = suggestions.map((suggestion) => ({
+        field: suggestion.field,
+        label: suggestion.label,
+        required: suggestion.required ?? false,
+        type: suggestion.type ?? 'string',
+        aliases: [],
+        group: suggestion.group ?? null,
+        group_label: suggestion.group_label ?? null,
+        group_index: suggestion.group_index ?? null,
+        group_field: suggestion.group_field ?? null,
+      }))
+    } catch (e: any) {
+      console.error('Failed to fetch the field catalogue:', e)
+    } finally {
+      fieldCatalogueLoading.value = false
     }
   }
 
@@ -273,6 +323,7 @@ export const useImportStore = defineStore('import', () => {
     uploading.value = false
     currentImportSession.value = null
     mappings.value = []
+    fieldCatalogue.value = []
   }
 
   return {
@@ -294,6 +345,9 @@ export const useImportStore = defineStore('import', () => {
     currentImportSession,
     mappings,
     mappingsLoading,
+    fieldCatalogue,
+    fieldCatalogueLoading,
+    fetchFieldCatalogue,
     fetchAllowedModels,
     fetchImports,
     initializeImport,
