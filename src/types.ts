@@ -167,7 +167,7 @@ export interface APIImportTemplate {
   is_default: boolean
   is_company_wide: boolean
   template_data: {
-    mappings?: { source_column: string; target_field: string }[]
+    mappings?: TemplateMappingPayload[]
   } | null
   usage_count: number
   last_used_at: string | null
@@ -240,6 +240,19 @@ export interface BatchUpdateMappingsPayload {
   columns: MappingColumnUpdate[]
 }
 
+/**
+ * One row of a saved template: the spreadsheet header and the target it feeds.
+ *
+ * `multi_strategy` rides along on the free-text targets a template may feed
+ * from several columns; without it the columns come back pointing at one target
+ * with no way to fold them, and all but one would be dropped on import.
+ */
+export interface TemplateMappingPayload {
+  source_column: string
+  target_field: string
+  multi_strategy?: MultiColumnStrategy | null
+}
+
 export interface CreateImportTemplatePayload {
   model: string
   template_name: string
@@ -247,7 +260,7 @@ export interface CreateImportTemplatePayload {
   is_default?: boolean
   is_company_wide?: boolean
   template_data: {
-    mappings: { source_column: string; target_field: string }[]
+    mappings: TemplateMappingPayload[]
   }
 }
 
