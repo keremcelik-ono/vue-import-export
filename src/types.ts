@@ -83,6 +83,14 @@ export type MappingMatchMethod =
 
 // --- Core resources ---
 
+/**
+ * How the cells of several columns pointed at one target become a single value.
+ *
+ * `merge` joins them with a space; `json` stores a `{"column": "cell"}` object.
+ * Null means the target is fed by one column, which is every target's default.
+ */
+export type MultiColumnStrategy = 'merge' | 'json'
+
 export interface APIImportMapping {
   id: number
   source_column: string
@@ -91,6 +99,8 @@ export interface APIImportMapping {
   match_method: MappingMatchMethod
   is_required: boolean
   is_confirmed: boolean
+  /** Set on every column of a target that is fed by more than one of them. */
+  multi_strategy?: MultiColumnStrategy | null
 }
 
 /**
@@ -106,6 +116,8 @@ export interface APIImportField {
   label: string
   required: boolean
   type: string
+  /** Whether several file columns may be mapped onto this target at once. */
+  multi?: boolean
   /** Header spellings the backend's matcher accepts; also the editor's search keys. */
   aliases: string[]
   group: string | null
@@ -218,6 +230,8 @@ export interface MappingColumnUpdate {
   source_column: string
   target_field: string | null
   confirmed: boolean
+  /** Sent on every column of a combined target; omitted for single-column ones. */
+  multi_strategy?: MultiColumnStrategy | null
 }
 
 export type UpdateMappingPayload = MappingColumnUpdate
